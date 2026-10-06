@@ -1,16 +1,8 @@
 #pragma once
 #define QT_NO_DEPRECATED_WARNINGS
-/*
-		About the game:
-		"Your job is to slay the wumpus using bow and arrow.\n"
-		"In addition to the wumpus, the cave has two hazards: bottomless pits and giant bats.\n"
-		"If you enter a room with a bottomless pit, it’s the end of the game for you.\n"
-		"If you enter a room with a bat, the bat picks you up and drops you into another room.\n"
-		"If you enter the room with the wumpus or he enters yours, he eats you.\n"
-		"You can click the map instead of typing room numbers.\n"
-		"Example: s13 3 4 shoots through rooms 13, then 3, then 4.\n"
-		"If rooms are not connected, arrow will ricochet in a random adjacent room, it may be your room.\n"
-*/
+
+// see Game_Window::show_help() function for game rules and features. at the start of the .cpp file
+
 #include <array>
 #include <numbers>
 #include <random>
@@ -26,6 +18,7 @@
 #include <QVBoxLayout>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QRadioButton>
 #include <QListView>
 #include <QLineEdit>
 #include <QPainter>
@@ -47,7 +40,7 @@ enum class Outcome
 	ran_out_of_arrows,
 	hit_by_ricocheting_arrow
 };
-//---------------------------------------------------------------------
+//-------------------------------map structure--------------------------------------
 class Cave {
 public:
 	Cave();
@@ -69,7 +62,7 @@ struct Action
 	Action_error validate_action(const Cave&); // on invalid action throws
 	Outcome affect(Cave&, std::ostream&);
 };
-//---------------------------------------------------------------------
+//--------------------------------Game logic------------------------------------- 
 class Game
 {
 public:
@@ -81,21 +74,25 @@ private:
 	Outcome m_outcome{ Outcome::not_over };
 	Cave m_cave_state;
 };
-//---------------------------------------------------------------------
+//--------------------------------a room on the map-------------------------------------
 class Index_Circle
 {
 public:
 	Index_Circle(QPoint center, const QString& index, int radius = 27);
 	void set_fill_color(QColor c) { m_fill_color = c; }
+	void set_checked(bool checked) { m_is_checked = checked; }
 	QPoint center() const { return m_center; }
 	const QRect& text_box_bounds() const { return m_text_box; }
 	int radius() const { return m_radius; }
+
 	void paint(QPainter& painter) const;
 private:
 	const QPoint m_center;
 	const QString m_index;
 	const int m_radius;
 	const QRect m_text_box;
+	bool m_is_checked{ false };
+	QColor m_outline_color{ Qt::white };
 	QColor m_fill_color{ Qt::black };
 };
 //---------------------------------------------------------------------
@@ -107,11 +104,15 @@ public:
 	{
 		been_here,
 		maybe_bat,
-		maybe_pit
+		maybe_pit,
+		wumpus_slain_here,
+		player_slain_here
 	};
 	explicit Cave_Map(QWidget* parrent = nullptr);
 	void mark_on_action(const Game&, Action c);
 	void mark_room(int index, Status);
+	void check_room(int index) { m_rooms[index].set_checked(true); }
+	void uncheck_all_rooms() { for (auto& r : m_rooms)r.set_checked(false); }
 signals:
 	void room_clicked(int room_index);
 protected:
@@ -132,25 +133,31 @@ public:
 	Game_Window();
 	void debug_print() const;
 private:
-	Game game; // game data and logic
+	Game m_game; // game data and logic
 	//-------------------
-	QStandardItemModel message_data_model;
-	//------
-	QHBoxLayout base_layout;
-	QWidget in_out_group;
-	Cave_Map map; // draws map
-	// --- in_out_group ---
-	QVBoxLayout in_out_group_layout;
-	QListView message_view;
-	// --- input_group ---
-	QWidget input_group;
-	QHBoxLayout input_layout;
-	QPushButton help_button;
-	QLineEdit input_field;
-	QPushButton input_button;
+	QStandardItemModel m_message_data_model; // contains messages to player
+	QListView m_message_view; // draws messages to player
+	//------ base 
+	QHBoxLayout m_base_layout;
+	QVBoxLayout m_in_out_group_layout;
+	Cave_Map m_map; // draws map, takes click input
+	// --- out_group ---
+	QHBoxLayout m_input_layout;
+	QPushButton m_help_button;
+
+	QHBoxLayout m_action_buttons_layout;
+	QRadioButton m_move;
+	QRadioButton m_shoot;
+	QRadioButton m_label;
+
+	void update_current_input(std::string new_value) { m_map.uncheck_all_rooms(); update(); m_current_input = new_value; }
+	std::string m_current_input;
+
+	QPushButton m_input_button;
 	//-------------------
 	void on_input(); // game logic
 	void update_message(std::ostringstream&);
+	void print_on_outcome(std::ostringstream&);
 	void show_help();
 };
 //---------------------------------------------------------------------

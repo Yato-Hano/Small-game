@@ -1,6 +1,23 @@
 #define QT_NO_DEPRECATED_WARNINGS
 #include <Hunt_the_Wumpus_game.h>
 
+void Game_Window::show_help()
+{
+	QMessageBox::information(this, "How to play",
+		"Your job is to slay the wumpus using bow and arrow.\n"
+		"In addition to the wumpus, the cave has two hazards: bottomless pits and giant bats.\n"
+		"If you enter a room with a bottomless pit, it’s the end of the game for you.\n"
+		"If you enter a room with a bat, the bat picks you up and drops you into another room.\n"
+		"If you enter the room with the wumpus or he enters yours, he eats you.\n"
+		"Choose an action with the radio buttons.\n"
+		"You can click the map rooms.\n"
+		"The clicked room is highlighted. Rooms you have been in are highlighted.\n"
+		"The end room will be highlighted.\n"
+		"Example: Shoot -> 13 -> 3 -> 4 shoots through rooms 13, then 3, then 4.\n"
+		"If rooms are not connected, arrow will ricochet in a random adjacent room, it may be your room.\n"
+	);
+}
+
 inline int rand_int(int min, int max)
 {
 	static std::default_random_engine ran{ unsigned(time(0)) };
@@ -93,17 +110,21 @@ Room* rand_adj_room(const Room* r)
 {
 	return r->tunnel[rand_int(0, 2)];
 }
-
-void Action::direct_the_arrow(const Cave& cave,int room_index_a,int room_index_b)
+Room* random_adj_room_including(const Room* r)
 {
-	rooms_indices[room_index_a] = rand_adj_room(&cave.rooms[rooms_indices[room_index_a]])->index;
-	rooms_indices.erase(rooms_indices.begin() + room_index_b, rooms_indices.end());
-}
+	std::array<const Room*, 4> rooms{ r ,r->tunnel[0],r->tunnel[1], r->tunnel[2] };
 
+	return const_cast<Room*> (rooms[rand_int(0, 3)]);
+}
+void Action::direct_the_arrow(const Cave& cave,int from_index,int to_index)
+{
+	rooms_indices[to_index] = random_adj_room_including(&cave.rooms[rooms_indices[from_index]])->index;
+	rooms_indices.erase(rooms_indices.begin() + to_index+1, rooms_indices.end());
+}
 Action::Action_error Action::validate_action(const Cave& cave)
 {
 	if (rooms_indices.empty()) return Action_error::no_room_provided; // throw std::string{ "Provide a room number" };
-
+	qDebug() <<"rooms_indices input: " << std::format("{}", rooms_indices);
 	switch (what)
 	{
 	case Action_type::shoot:
@@ -111,7 +132,9 @@ Action::Action_error Action::validate_action(const Cave& cave)
 		if (!is_connected(cave.rooms[cave.player_in_room], cave.rooms[rooms_indices[0]]))
 			//ricocheting arrow (can be player's room)
 		{
-			direct_the_arrow(cave,0,1);
+			rooms_indices[0] = random_adj_room_including(&cave.rooms[cave.player_in_room])->index;
+			rooms_indices.erase(rooms_indices.begin() + 1, rooms_indices.end());
+			qDebug() << "rooms_indices ric1: " << std::format("{}", rooms_indices);
 			return Action_error::ricocheting_arrow;
 		}
 		for (int i = 1; i < rooms_indices.size(); i++)
@@ -120,6 +143,7 @@ Action::Action_error Action::validate_action(const Cave& cave)
 				//ricocheting arrow (can be player's room)
 			{
 				direct_the_arrow(cave,i-1,i);
+				qDebug() << "rooms_indices ric2: " << std::format("{}", rooms_indices);
 				return Action_error::ricocheting_arrow;
 			}
 		}
@@ -136,7 +160,6 @@ Action::Action_error Action::validate_action(const Cave& cave)
 Outcome Action::affect(Cave& cave, std::ostream& os)
 {
 	if (what == Action::Action_type::label) return Outcome::not_over;
-	qDebug()<<std::format("rooms provided{}", rooms_indices);
 
 	switch (Action_error action_error{ validate_action(cave) })
 	{
@@ -150,7 +173,6 @@ Outcome Action::affect(Cave& cave, std::ostream& os)
 		os << "Ricocheting arrow. Rooms were not connected.\n";
 		break;
 	}
-	qDebug() << std::format("rooms result{}", rooms_indices);
 
 	switch (what)
 	{
@@ -159,20 +181,28 @@ Outcome Action::affect(Cave& cave, std::ostream& os)
 		while (cave.rooms[cave.player_in_room].bat_here)
 		{
 			os << "You've been caught by a giant bat.\n";
-			Room* new_room = rand_adj_room(&cave.rooms[cave.player_in_room]);
+			const Room* new_room = rand_adj_room(&cave.rooms[cave.player_in_room]);
 			cave.player_in_room = new_room->index;
 		}
 		break;
 	case Action_type::shoot:
 	{
+		os << "The arrow flies through the rooms";
 		for (const int& n : rooms_indices)
 		{
+			os << ' ' << n;
 			if (cave.player_in_room==n)
+			{
+				os << '\n';
 				return Outcome::hit_by_ricocheting_arrow;
-
+			}
 			if (cave.rooms[n].wumpus_here)
+			{
+				os << '\n';
 				return Outcome::hit_wumpus;
+			}
 		}
+		os << '\n';
 		os << "You woke up the wumpus and it moved to another room.\n";
 		--cave.arrows_left;
 		Room* wump_room = &cave.rooms[cave.wumpus_in_room()];
@@ -220,22 +250,15 @@ std::istream& operator>>(std::istream& is, Action& a)
 		at = Action::Action_type::label;
 		break;
 	default:
-		throw std::string{ "invalid action (use m or s)" };
+		throw std::string{ "Choose action" };
 
 	}
 	int room_n{ 0 };
 	std::vector<int>r;
 	for (int i = 0; i < 3 && is >> room_n; i++)
 	{
-		if (room_n < 0 || 19 < room_n)
-			throw std::string{ "invalid room number" };
-
 		r.push_back(room_n);
-		
-		if (char space{  }; is.get(space) && !iswspace(space)) 
-			break;
 	}
-	// if (r.empty()) throw std::string{ "provide a room number" }; 
 	a.rooms_indices = std::move(r);
 	a.what = at;
 	return is;
@@ -251,27 +274,7 @@ void Game::debug_print() const
 		qDebug() << line.c_str();
 	}
 }
-void print_outcome(std::ostream& os, Outcome result)
-{
-	switch (result)
-	{
-	case Outcome::fell_into_pit:
-		os << "You fell into bottomless pit.\n";
-		break;
-	case Outcome::hit_wumpus:
-		os << "You hit the Wumpus.\n";
-		break;
-	case Outcome::eaten_by_wumpus:
-		os << "You were eaten by the Wumpus.\n";
-		break;
-	case Outcome::ran_out_of_arrows:
-		os << "You ran out of arrows.\n";
-		break;
-	case Outcome::hit_by_ricocheting_arrow:
-		os << "You were hit by your own ricocheting arrow.\n";
-		break;
-	}
-}
+
 Action Game::run(std::ostream& os, std::istream& is)
 {
 	Action action;
@@ -346,7 +349,10 @@ void Index_Circle::paint(QPainter& painter) const
 	
 	//drawing circle
 	painter.setBrush(m_fill_color);
-	painter.setPen(Qt::NoPen);
+
+	if(m_is_checked) painter.setPen(m_outline_color);
+	else painter.setPen(Qt::NoPen);
+
 	painter.drawEllipse(m_center, m_radius, m_radius);
 
 	//drawing text
@@ -359,7 +365,7 @@ void Index_Circle::paint(QPainter& painter) const
 
 Cave_Map::Cave_Map(QWidget* parrent)
 	:QWidget{ parrent },
-	m_center{ 300,300 }, //700,300
+	m_center{ 300,300 },
 	m_connecting_rings_radii{ 225, 150, 75 }	
 {
 	setMinimumSize(600, 600);
@@ -413,7 +419,13 @@ void Cave_Map::mark_room(int index, Status status)
 		m_rooms[index].set_fill_color(Qt::cyan);
 		break;
 	case Status::maybe_pit:
-		m_rooms[index].set_fill_color(QColor(139, 0, 0));
+		m_rooms[index].set_fill_color(Qt::lightGray);
+		break;
+	case Status::player_slain_here:
+		m_rooms[index].set_fill_color(Qt::darkRed);
+		break;
+	case Status::wumpus_slain_here:
+		m_rooms[index].set_fill_color(Qt::darkBlue);
 		break;
 	default:
 		throw std::runtime_error("invalid room status");
@@ -430,7 +442,7 @@ void Cave_Map::paintEvent(QPaintEvent* /**/)
 	painter.setRenderHint(QPainter::Antialiasing);
 	painter.setPen(pen);
 	painter.setBrush(Qt::NoBrush);
-
+	
 	for (const int& radius : m_connecting_rings_radii)
 	{
 		painter.drawEllipse(m_center, radius, radius);
@@ -465,125 +477,140 @@ void Cave_Map::mousePressEvent(QMouseEvent* event)
 }
 //----------------------------------------------------------------
 Game_Window::Game_Window()
-	:message_data_model{ this },
-	base_layout{ this },
-	in_out_group{ this },
-	map{ this },
-	in_out_group_layout{ &in_out_group },
-	message_view{ &in_out_group },
-	input_group{ &in_out_group },
-	input_layout{ &input_group },
-	help_button{ "Help", &input_group },
-	input_field{ &input_group },
-	input_button{"Input", &input_group}
+	:m_message_data_model{ this },
+	m_help_button{ "Help" },
+	m_move{ "Move" },
+	m_shoot{ "Shoot" },
+	m_label{ "Label" },
+	m_input_button{"Input"}
 {
 	setWindowIcon(QIcon{ "images/cave.png" });
-
+	
 	resize(1200, 600);
+	
+	m_base_layout.addLayout(&m_in_out_group_layout);
+	m_base_layout.addWidget(&m_map);
+	setLayout(&m_base_layout);
 
-	base_layout.addWidget(&in_out_group);
-	base_layout.addWidget(&map);
+	m_in_out_group_layout.addWidget(&m_message_view);
+	m_in_out_group_layout.addLayout(&m_input_layout);
 
-	in_out_group_layout.addWidget(&message_view);
-	in_out_group_layout.addWidget(&input_group);
+	m_action_buttons_layout.addWidget(&m_move);
+	m_action_buttons_layout.addWidget(&m_shoot);
+	m_action_buttons_layout.addWidget(&m_label);
 
-	input_layout.addWidget(&help_button);
-	input_layout.addWidget(&input_field);
-	input_layout.addWidget(&input_button);
+	m_input_layout.addWidget(&m_help_button);
+	m_input_layout.addLayout(&m_action_buttons_layout);
+	m_input_layout.addWidget(&m_input_button);
 
-	message_view.setModel(&message_data_model);
+	m_message_view.setModel(&m_message_data_model);
 
-	input_field.setPlaceholderText("move, shoot, label (m, s, l)");
+	connect(&m_help_button, &QPushButton::clicked, this, &Game_Window::show_help);
+	connect(&m_input_button, &QPushButton::clicked, this, &Game_Window::on_input);
 
-	connect(&help_button, &QPushButton::clicked, this, &Game_Window::show_help);
-	connect(&input_field, &QLineEdit::returnPressed, this, &Game_Window::on_input);
-	connect(&input_button, &QPushButton::clicked, this, &Game_Window::on_input);
-	connect(&map, &Cave_Map::room_clicked, this, 
+	connect(&m_move, &QRadioButton::clicked, this, [this] { update_current_input("m"); });
+	connect(&m_shoot, &QRadioButton::clicked, this, [this] { update_current_input("s"); });
+	connect(&m_label, &QRadioButton::clicked, this, [this] { update_current_input("l"); });
+
+	connect(&m_map, &Cave_Map::room_clicked, this,
 		[this](int room_index)
 		{
-			input_field.insert(' ' + QString::number(room_index));
+			m_map.check_room(room_index);
+			m_current_input += ' ';
+			m_current_input += std::to_string(room_index);
+			update();
 		});
-
+		
 	std::ostringstream os;
-	os << game.cave_state();
+	os << m_game.cave_state();
 	update_message(os);
-	map.mark_room(game.cave_state().player_in_room, Cave_Map::Status::been_here);
+	m_map.mark_room(m_game.cave_state().player_in_room, Cave_Map::Status::been_here);
 }
-void Game_Window::show_help()
+void Game_Window::print_on_outcome(std::ostringstream& os)
 {
-	QMessageBox::information(this,"How to play",
-		"Your job is to slay the wumpus using bow and arrow.\n"
-		"In addition to the wumpus, the cave has two hazards: bottomless pits and giant bats.\n"
-		"If you enter a room with a bottomless pit, it’s the end of the game for you.\n"
-		"If you enter a room with a bat, the bat picks you up and drops you into another room.\n"
-		"If you enter the room with the wumpus or he enters yours, he eats you.\n"
-		"You can click the map instead of typing room numbers.\n"
-		"Example: s13 3 4 shoots through rooms 13, then 3, then 4.\n"
-		"If rooms are not connected, arrow will ricochet in a random adjacent room, it may be your room.\n"
-	);
+	switch (m_game.outcome())
+	{
+	case Outcome::fell_into_pit:
+		os << "You fell into bottomless pit.\n";
+		m_map.mark_room(m_game.cave_state().player_in_room, Cave_Map::Status::player_slain_here);
+		break;
+	case Outcome::hit_wumpus:
+		os << "You hit the Wumpus.\n";
+		m_map.mark_room(m_game.cave_state().wumpus_in_room(), Cave_Map::Status::wumpus_slain_here);
+		break;
+	case Outcome::eaten_by_wumpus:
+		os << "You were eaten by the Wumpus.\n";
+		m_map.mark_room(m_game.cave_state().player_in_room, Cave_Map::Status::player_slain_here);
+		break;
+	case Outcome::ran_out_of_arrows:
+		os << "You ran out of arrows.\n";
+		break;
+	case Outcome::hit_by_ricocheting_arrow:
+		os << "You were hit by your own ricocheting arrow.\n";
+		m_map.mark_room(m_game.cave_state().player_in_room, Cave_Map::Status::player_slain_here);
+		break;
+	}
 }
 void Game_Window::update_message(std::ostringstream& os)
 {
-	message_data_model.clear();
-	print_outcome(os, game.outcome()); // can add an end game message
+	m_message_data_model.clear();
+	print_on_outcome(os); // can add an end game message and mark the room
+
 	std::istringstream is{ os.str() };
 	for (std::string line; std::getline(is, line);)
 	{
-		message_data_model.appendRow(new QStandardItem{ QString{line.c_str()}});
+		m_message_data_model.appendRow(new QStandardItem{ QString{line.c_str()}});
 	}
+	update();
 }
 void Game_Window::on_input()
 {
 	std::ostringstream os;
-	if (game.outcome() == Outcome::not_over)
+	if (m_game.outcome() == Outcome::not_over)
 	{
-		std::istringstream is{ input_field.text().toUtf8().constData() };
-		input_field.clear();
+		m_map.uncheck_all_rooms();
+		std::istringstream is{ m_current_input };
 
-		Action action = game.run(os, is);
-		map.mark_on_action(game, action);
+		if(!m_current_input.empty())
+			m_current_input.erase(m_current_input.begin()+1, m_current_input.end());
 
-		if (game.outcome() == Outcome::not_over)
+		Action action = m_game.run(os, is);
+		m_map.mark_on_action(m_game, action);
+
+		if (m_game.outcome() == Outcome::not_over)
 		{
-			os << game.cave_state() << '\n';
+			os << m_game.cave_state() << '\n';
 		}
 	}
 	update_message(os);
 }
 void Game_Window::debug_print() const
 {
-	game.debug_print();
+	m_game.debug_print();
 }
 //-----------------------------------------------------
 int main(int argc, char* argv[])
-try
 {
 	QApplication app{ argc, argv };
 
-	app.setFont(QFont{ "Segoe UI",14 });
-
-	Game_Window game_window;
-	game_window.show();
-	//game_window.debug_print();
-
-	return app.exec();
-}
-catch (const std::runtime_error& surprise)
-{
-	std::ofstream ofs{ "ERROR_runtime_error.txt" };
-	ofs << surprise.what();
-	return 1;
-}
-catch (const std::exception& surprise)
-{
-	std::ofstream ofs{ "ERROR_exception.txt" };
-	ofs << surprise.what();
-	return 2;
-}
-catch (...)
-{
-	std::ofstream ofs{ "ERROR_unknown_exception.txt" };
-	ofs << "Caught an unknown exception.";
-	return 3;
+	try
+	{
+		app.setFont(QFont{ "Segoe UI",14 });
+		Game_Window game_window;
+		game_window.show();
+		//game_window.debug_print();
+		return app.exec();
+	}
+	catch (const std::exception& e)
+	{
+		QMessageBox::critical(nullptr, "Error", e.what());
+		return 1;
+	}
+	catch (...)
+	{
+		QMessageBox::critical(nullptr, "Error", "Some error.");
+		return 2;
+	}
+	return 0;
 }
 //-----------------------------------------------------
