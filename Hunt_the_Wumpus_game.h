@@ -3,14 +3,6 @@
 
 // see Game_Window::show_help() function for game rules and features. at the start of the .cpp file
 
-#include <array>
-#include <numbers>
-#include <random>
-#include <iostream>
-#include <format>
-#include <string>
-#include <fstream>
-
 #include <QApplication>
 #include <QWidget>
 #include <QStandardItemModel>
@@ -24,6 +16,7 @@
 #include <QPainter>
 #include <QMouseEvent>
 
+import std;
 //---------------------------------------------------------------------
 struct Room {
 	std::array<Room*, 3> tunnel{};
