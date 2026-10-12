@@ -17,6 +17,7 @@
 #include <QMouseEvent>
 
 import std;
+
 //---------------------------------------------------------------------
 struct Room {
 	std::array<Room*, 3> tunnel{};
@@ -48,11 +49,10 @@ public:
 struct Action
 {
 	enum class Action_type { none, move, shoot, label };
-	enum class Action_error { none, no_room_provided, ricocheting_arrow, cant_go_there };
 	std::vector<int>rooms_indices;
 	Action_type what{ Action_type::none };
 	void direct_the_arrow(const Cave& cave, int room_index_a, int room_index_b); // ricocheting arrow
-	Action_error validate_action(const Cave&); // on invalid action throws
+	void validate_action(const Cave&); // on invalid action throws
 	Outcome affect(Cave&, std::ostream&);
 };
 //--------------------------------Game logic------------------------------------- 

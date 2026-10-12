@@ -121,10 +121,12 @@ void Action::direct_the_arrow(const Cave& cave,int from_index,int to_index)
 	rooms_indices[to_index] = random_adj_room_including(&cave.rooms[rooms_indices[from_index]])->index;
 	rooms_indices.erase(rooms_indices.begin() + to_index+1, rooms_indices.end());
 }
-Action::Action_error Action::validate_action(const Cave& cave)
+void Action::validate_action(const Cave& cave)
 {
-	if (rooms_indices.empty()) return Action_error::no_room_provided; // throw std::string{ "Provide a room number" };
+	if (rooms_indices.empty()) throw std::string{ "Provide a room index" };
+
 	qDebug() <<"rooms_indices input: " << std::format("{}", rooms_indices);
+
 	switch (what)
 	{
 	case Action_type::shoot:
@@ -135,7 +137,7 @@ Action::Action_error Action::validate_action(const Cave& cave)
 			rooms_indices[0] = random_adj_room_including(&cave.rooms[cave.player_in_room])->index;
 			rooms_indices.erase(rooms_indices.begin() + 1, rooms_indices.end());
 			qDebug() << "rooms_indices ric1: " << std::format("{}", rooms_indices);
-			return Action_error::ricocheting_arrow;
+			throw int{};
 		}
 		for (int i = 1; i < rooms_indices.size(); i++)
 		{
@@ -144,34 +146,32 @@ Action::Action_error Action::validate_action(const Cave& cave)
 			{
 				direct_the_arrow(cave,i-1,i);
 				qDebug() << "rooms_indices ric2: " << std::format("{}", rooms_indices);
-				return Action_error::ricocheting_arrow;
+				throw int{};
 			}
 		}
 		break;
 	case Action_type::move:
-		if (!is_connected(cave.rooms[cave.player_in_room], cave.rooms[rooms_indices[0]]))
-		{
-			return Action_error::cant_go_there;
+		if (!is_connected(cave.rooms[cave.player_in_room], cave.rooms[rooms_indices[0]]))		{
+			throw std::string{ "Cant go there, the rooms are not connected" };
 		}
 		break;
 	}
-	return Action_error::none;
 }
 Outcome Action::affect(Cave& cave, std::ostream& os)
 {
 	if (what == Action::Action_type::label) return Outcome::not_over;
 
-	switch (Action_error action_error{ validate_action(cave) })
+	try 
+	{ 
+		validate_action(cave);
+	}
+	catch (const std::string&)
 	{
-	case Action_error::no_room_provided:
-		throw std::string{ "Provide a room index.\n" };
-		break;
-	case Action_error::cant_go_there:
-		throw std::string{ "Cant go there, the rooms are not connected.\n" };
-		break;
-	case Action_error::ricocheting_arrow:
-		os << "Ricocheting arrow. Rooms were not connected.\n";
-		break;
+		throw;
+	}
+	catch (...)
+	{
+		os << "Ricocheting arrow. Rooms were not connected\n";
 	}
 
 	switch (what)
@@ -226,12 +226,7 @@ Outcome Action::affect(Cave& cave, std::ostream& os)
 
 	return Outcome::not_over;
 }
-/*
-examples:
-s13 4 3
-m13
-l13
-*/
+
 std::istream& operator>>(std::istream& is, Action& a)
 {
 	a = {}; // clear
@@ -614,3 +609,7 @@ int main(int argc, char* argv[])
 	return 0;
 }
 //-----------------------------------------------------
+
+
+
+
