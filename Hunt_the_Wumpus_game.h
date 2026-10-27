@@ -1,7 +1,7 @@
 #pragma once
 #define QT_NO_DEPRECATED_WARNINGS
 
-// see Game_Window::show_help() function for game rules and features. at the start of the .cpp file
+// see Readme for game rules and features.
 
 #include <QApplication>
 #include <QWidget>
